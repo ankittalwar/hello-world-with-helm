@@ -1,0 +1,25 @@
+fail_fast: true
+repos:
+- repo: https://github.com/pre-commit/pre-commit-hooks
+  rev: v4.5.0
+  hooks:
+    - id: check-merge-conflict
+    - id: detect-aws-credentials
+    - id: detect-private-key
+    - id: check-yaml
+    - id: check-xml
+    - id: check-json
+
+- repo: https://github.com/sephora-asia/pre-commit-hooks
+  rev: master
+  hooks:
+    - id: commitlint
+      stages: [commit-msg]
+
+- repo: https://github.com/antonbabenko/pre-commit-terraform.git
+  rev: v1.88.0 # Get the latest from: https://github.com/antonbabenko/pre-commit-terraform/releases
+  hooks:
+    - id: terraform_fmt
+    - id: terraform_docs
+    - id: terraform_tflint
+  

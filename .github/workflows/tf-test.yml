@@ -1,0 +1,27 @@
+name: terraform-test
+on:
+  push:
+    paths:
+     - 'terraform/**'
+
+jobs:
+  tflint:
+    name: TFLint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@master
+      - name: TFLint
+        uses: terraform-linters/setup-tflint@v2
+      - name: Init TFLint
+        run: tflint --init
+      - name: Run TFLint
+        run: tflint --config .tflint.hcl
+
+  fmt:
+    name: Code Format
+    runs-on: ubuntu-latest
+    container:
+      image: hashicorp/terraform:latest
+    steps:
+      - uses: actions/checkout@master
+      - run: terraform fmt --recursive -check=true

@@ -1,0 +1,9 @@
+{
+  "plugins": [
+    "git-tag",
+    "conventional-commits",
+    "released"
+  ],
+  "owner": "ankittalwar",
+  "repo": "hello-world-with-helm"
+}
