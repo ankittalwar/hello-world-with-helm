@@ -1,0 +1,9 @@
+{
+  "plugins": [
+    "git-tag",
+    "conventional-commits",
+    "released"
+  ],
+  "owner": "sephora-asia",
+  "repo": "java-maven-spring-template"
+}

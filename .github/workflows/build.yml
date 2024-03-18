@@ -1,0 +1,124 @@
+name: build
+on: 
+    workflow_dispatch:
+
+
+## OIDC Configuration
+permissions:
+    id-token: write
+    contents: read
+
+env:
+    AWS_REGION: 'ap-southeast-1'
+    ECR_ACCOUNT_ID: 983961151039
+    ECR_IMAGE_NAME: <service-name>
+    IMAGE_TAG: sha-${{ github.sha }}
+
+
+jobs:
+    build:
+        runs-on: ubuntu-latest
+        steps:
+          - name: Code Checkout
+            uses: actions/checkout@v4
+          - name: Setup Amazon Coretto 17
+            uses: actions/setup-java@v4
+            with:
+                distribution: 'corretto'
+                java-version: '17'
+          - name: Cache the Maven Packages
+            uses: actions/cache@v4
+            with:
+              path: ~/.m2
+              key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+              restore-keys: ${{ runner.os }}-m2
+          - name: Build Application JAR
+            run: mvn -B package --file pom.xml
+          - name: Assume push role
+            uses: aws-actions/configure-aws-credentials@v1
+            with:
+              aws-region: ${{ env.AWS_REGION }}
+              role-to-assume: ${{ secrets.AWS_PUSH_ROLE_TO_ASSUME }}
+          - name: Set up Docker Buildx
+            uses: docker/setup-buildx-action@v1
+            with:
+              install: true
+          - name: Login to Amazon ECR
+            id: login-ecr
+            uses: aws-actions/amazon-ecr-login@v1
+            with:
+              registries: ${{ env.ECR_ACCOUNT_ID }}
+          - name: Login to DockerHub
+            uses: docker/login-action@v1
+            with:
+              registry: ghcr.io
+              username: ${{ github.actor }}
+              password: ${{ secrets.GH_PACKAGES_TOKEN }}
+          - name: Cache Docker Build
+            uses: actions/cache@v2
+            with:
+              path: /tmp/.buildx-cache
+              key: ${{ runner.os }}-buildx-${{ github.sha }}
+              restore-keys: |
+                ${{ runner.os }}-buildx-
+          - name: Set image name
+            id: image-name
+            run: |
+               echo "IMAGE_NAME=${ECR_ACCOUNT_ID}.dkr.ecr.ap-southeast-1.amazonaws.com/${ECR_IMAGE_NAME}" >> $GITHUB_ENV
+               echo "image_name=${ECR_ACCOUNT_ID}.dkr.ecr.ap-southeast-1.amazonaws.com/${ECR_IMAGE_NAME}" >> $GITHUB_OUTPUT
+          - name: Docker meta
+            uses: docker/metadata-action@v4
+            id: image-meta
+            with:
+               images: |
+                 ${{ steps.image-name.outputs.image_name }}
+               tags: |
+                 type=edge,branch=master
+                 type=ref,event=branch,enable=false
+                 type=ref,event=tag
+                 type=raw,value=latest,enable={{is_default_branch}}
+                 type=sha,format=long,prefix=sha-
+          - name: Build Image
+            uses: docker/build-push-action@v4
+            with:
+               context: .
+               push: false
+               load: true
+               #platforms: linux/amd64,linux/arm64
+               tags: ${{ steps.image-meta.outputs.tags }}
+               labels: ${{ steps.image-meta.outputs.labels }}
+               cache-from: type=gha
+               cache-to: type=gha,mode=max
+               secrets: |
+                  "github_credentials=sephora-bot:${{ secrets.GH_PACKAGES_TOKEN }}"
+          - name: Move cache
+            run: |
+              rm -rf /tmp/.buildx-cache
+              mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+          - name: Trivy cache
+            uses: actions/cache@v3
+            with:
+               path: /tmp/trivy
+               key: ${{ runner.os }}-trivy
+          - name: Run Trivy vulnerability scanner
+            uses: aquasecurity/trivy-action@master
+            with:
+               image-ref: ${{ steps.image-name.outputs.image_name }}:${{ env.IMAGE_TAG }}
+               format: 'table'
+               exit-code: '0' # Change this to 1 when we want to fail the build
+               ignore-unfixed: true
+               vuln-type: 'os,library'
+               severity: 'CRITICAL,HIGH'
+               timeout: '10m'
+          - name: Push Image to ECR
+            if: ${{ success() }}
+            run: |
+              docker push ${{ steps.image-name.outputs.image_name }}:${{ env.IMAGE_TAG }}
+          - name: Logout of Amazon ECR and Docker Package Registry
+            if: always()
+            run: |
+              docker logout ${{ env.ECR_ACCOUNT_ID }}.dkr.ecr.ap-southeast-1.amazonaws.com
+              docker logout ghcr.io
+          
+
+
